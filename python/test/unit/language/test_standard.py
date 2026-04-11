@@ -59,6 +59,53 @@ def test_sort(M, N, k, descending, dtype_str, device):
     assert (y == z).all(), (y, z)
 
 
+@pytest.mark.parametrize("descending", [False, True])
+def test_sort_nan(descending, device):
+    """NaN values must be preserved (not dropped) by tl.sort.
+
+    IEEE 754 comparisons with NaN always return False, which causes the
+    original bitonic sort to silently overwrite NaN slots with duplicates
+    of finite values.  The fix treats NaN as greater than any finite value,
+    so NaN sorts to the end in ascending order (and to the front in
+    descending order) while the element count is unchanged.
+    """
+    import math
+
+    N = 8
+
+    @triton.jit
+    def sort_nan_kernel(x_ptr, out_ptr, N: tl.constexpr, descending: tl.constexpr):
+        idx = tl.arange(0, N)
+        x = tl.load(x_ptr + idx)
+        y = tl.sort(x, descending=descending)
+        tl.store(out_ptr + idx, y)
+
+    # Two NaN values mixed among finite values (N must be a power of two for
+    # the bitonic sort).
+    inp = torch.tensor([3.0, float('nan'), 1.0, float('nan'), 2.0, 4.0, 5.0, 6.0], device=device, dtype=torch.float32)
+    out = torch.empty(N, device=device, dtype=torch.float32)
+    sort_nan_kernel[(1, )](inp, out, N, descending)
+
+    nan_count_in = inp.isnan().sum().item()
+    nan_count_out = out.isnan().sum().item()
+    assert nan_count_in == nan_count_out, \
+        f"NaN count changed: {nan_count_in} -> {nan_count_out} (descending={descending})"
+
+    finite_in = sorted([v for v in inp.tolist() if not math.isnan(v)], reverse=descending)
+    finite_out = [v for v in out.tolist() if not math.isnan(v)]
+    assert finite_in == finite_out, \
+        f"Finite values wrong (descending={descending}): expected {finite_in}, got {finite_out}"
+
+    # NaN values must be at the end for ascending, front for descending.
+    out_list = out.tolist()
+    if descending:
+        assert all(math.isnan(v) for v in out_list[:nan_count_in]), \
+            f"NaN values not at front for descending sort: {out_list}"
+    else:
+        assert all(math.isnan(v) for v in out_list[-nan_count_in:]), \
+            f"NaN values not at end for ascending sort: {out_list}"
+
+
 # ---------------
 # test flip op
 # ---------------

@@ -384,8 +384,12 @@ def _compare_and_swap(x, flip, i: core.constexpr):
     # determines whether we are in the right (rather than left) position along the axis:
     is_right = _indicator(n_dims, i)
 
-    # conditional swap:
-    ret = core.where((x > y) != (flip ^ is_right), y, x)
+    # conditional swap (treat NaN as greater than any finite value so NaN sorts
+    # to the end in ascending order and is preserved rather than dropped):
+    x_is_nan = x != x
+    y_is_nan = y != y
+    gt = (x > y) | (x_is_nan & ~y_is_nan)
+    ret = core.where(gt != (flip ^ is_right), y, x)
     return ret
 
 
