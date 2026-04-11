@@ -5115,6 +5115,22 @@ def test_inline_asm_packed_multiple_outputs(device):
 
 
 # -----------------------
+# test extern_elementwise export
+# -----------------------
+
+
+def test_extern_elementwise_exported():
+    import inspect
+    import triton.language as tl
+    assert hasattr(tl, 'extern_elementwise'), "tl.extern_elementwise is not exported from triton.language"
+    assert 'extern_elementwise' in tl.__all__, "extern_elementwise missing from tl.__all__"
+    sig = inspect.signature(tl.extern_elementwise)
+    expected_params = ['lib_name', 'lib_path', 'args', 'arg_type_symbol_dict', 'is_pure']
+    actual_params = [p for p in sig.parameters if not p.startswith('_')]
+    assert actual_params == expected_params, f"Unexpected signature params: {actual_params}"
+
+
+# -----------------------
 # test map elementwise
 # -----------------------
 
