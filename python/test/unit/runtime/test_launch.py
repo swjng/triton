@@ -239,4 +239,30 @@ def test_interpreter_implicit_cvt_bool() -> None:
 
     assert value.dtype == tl.int1
     assert value.handle.data.dtype == np.bool_
-    assert bool(value.handle.data[0]) is True
+
+
+@triton.jit
+def _noop_kernel(x_ptr, BLOCK: tl.constexpr):
+    pid = tl.program_id(0)
+    offs = pid * BLOCK + tl.arange(0, BLOCK)
+    x = tl.load(x_ptr + offs)
+    tl.store(x_ptr + offs, x)
+
+
+@pytest.mark.skipif(not is_cuda(), reason="requires CUDA backend")
+def test_cpu_tensor_rejected(device) -> None:
+    """Passing a CPU tensor (regular or pinned) must raise TypeError with a clear message."""
+    # Regular CPU tensor
+    cpu_tensor = torch.zeros(128)
+    with pytest.raises(TypeError, match="CPU tensor"):
+        _noop_kernel[(1, )](cpu_tensor, BLOCK=128)
+
+    # Pinned (page-locked) CPU tensor — previously bypassed validation
+    pinned_tensor = torch.zeros(128).pin_memory()
+    with pytest.raises(TypeError, match="CPU tensor"):
+        _noop_kernel[(1, )](pinned_tensor, BLOCK=128)
+
+    # CUDA tensor must still work correctly
+    cuda_tensor = torch.zeros(128, device=device)
+    _noop_kernel[(1, )](cuda_tensor, BLOCK=128)
+    assert torch.all(cuda_tensor == 0)

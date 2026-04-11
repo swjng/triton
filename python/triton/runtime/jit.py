@@ -735,6 +735,11 @@ class JITFunction(JITCallable, KernelInterface[T]):
         kernel_cache, kernel_key_cache, target, backend, binder = self.device_caches[device]
         # specialization is list[tuple[str, Any]], where first element of tuple is
         # the type and the second parameter is the 'specialization' value.
+        import torch as _torch
+        for _arg in list(args) + list(kwargs.values()):
+            if isinstance(_arg, _torch.Tensor) and not _arg.is_cuda:
+                raise TypeError(f"Kernel argument is a CPU tensor (device={_arg.device}). "
+                                "Move it to a CUDA device first.")
         bound_args, specialization, options = binder(*args, **kwargs)
 
         # add a cache field to the kernel specializations for kernel specific
